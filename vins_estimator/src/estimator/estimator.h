@@ -36,6 +36,9 @@
 #include "../factor/projectionOneFrameTwoCamFactor.h"
 #include "../featureTracker/feature_tracker.h"
 
+#include "../detect_3d_cuboid/detect_3d_cuboid.h"
+#include "../detect_3d_cuboid/object_3d_util.h"
+
 
 class Estimator
 {
@@ -79,6 +82,8 @@ class Estimator
     void fastPredictIMU(double t, Eigen::Vector3d linear_acceleration, Eigen::Vector3d angular_velocity);
     bool IMUAvailable(double t);
     void initFirstIMUPose(vector<pair<double, Eigen::Vector3d>> &accVector);
+
+    void detectObject(const Eigen::MatrixXd &raw_all_obj2d_bbox, const Eigen::Matrix4d &transToWolrd, std::vector<ObjectSet> all_obj_cubes);
 
     enum SolverFlag
     {

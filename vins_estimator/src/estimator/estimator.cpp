@@ -9,6 +9,9 @@
 
 #include "estimator.h"
 #include "../utility/visualization.h"
+#include "../detect_3d_cuboid/matrix_utils.h"
+#include "../detect_3d_cuboid/detect_3d_cuboid.h"
+#include "../line_lbd/line_lbd_allclass.h"
 
 Estimator::Estimator(): f_manager{Rs}
 {
@@ -1608,4 +1611,54 @@ void Estimator::updateLatestStates()
         tmp_gyrBuf.pop();
     }
     mPropagate.unlock();
+}
+
+void Estimator::detectObject(const Eigen::MatrixXd &raw_all_obj2d_bbox, const Eigen::Matrix4d &transToWorld, std::vector<ObjectSet> all_obj_cubes)
+{
+    cv::Mat imgTrack = featureTracker.getTrackImage();//当前时刻图片
+    std::vector<Vector4d> all_obj2d_bbox;
+    std::vector<double> all_box_confidence;
+
+    line_lbd_detect line_lbd_obj;
+    line_lbd_obj.use_LSD = true;
+    line_lbd_obj.line_length_thres = 15;  // remove short edges
+
+    //edge detection
+    cv::Mat all_lines_mat;
+    line_lbd_obj.detect_filter_lines(imgTrack, all_lines_mat);
+    Eigen::MatrixXd all_lines_raw(all_lines_mat.rows, 4);
+    for (int rr = 0; rr < all_lines_mat.rows; ++rr) {
+        for (int cc = 0; cc < 4; ++cc) {
+            all_lines_raw(rr, cc) = all_lines_mat.at<float>(rr, cc);
+        }
+    }
+
+    // detect all frames' cuboids.
+    detect_3d_cuboid detect_cuboid_obj;
+    detect_cuboid_obj.whether_plot_detail_images = false;
+    detect_cuboid_obj.whether_plot_final_images = false;
+    detect_cuboid_obj.print_details = false;  // false  true
+    detect_cuboid_obj.set_calibration(calib);
+    detect_cuboid_obj.whether_sample_bbox_height = false;
+    detect_cuboid_obj.nominal_skew_ratio = 2;
+    detect_cuboid_obj.whether_save_final_images = true;
+
+    // remove some 2d boxes too close to boundary.
+    int boundary_threshold = 20;
+    int img_width = imgTrack.cols;
+    std::vector<int> good_object_ids;
+    for (int i = 0; i < raw_all_obj2d_bbox.rows(); i++)
+        if ((raw_all_obj2d_bbox(i, 0) > boundary_threshold) && (raw_all_obj2d_bbox(i, 0) + raw_all_obj2d_bbox(i, 2) < img_width - boundary_threshold))
+            good_object_ids.push_back(i);
+    Eigen::MatrixXd all_obj2d_bbox_infov_mat(good_object_ids.size(), 5);
+    for (size_t i = 0; i < good_object_ids.size(); i++)
+    {
+        all_obj2d_bbox_infov_mat.row(i) = raw_all_obj2d_bbox.row(good_object_ids[i]);
+        all_obj2d_bbox.push_back(raw_all_obj2d_bbox.row(good_object_ids[i]));
+        all_box_confidence.push_back(1); //TODO change here.
+    }
+
+    detect_cuboid_obj.detect_cuboid(imgTrack, transToWorld, all_obj2d_bbox_infov_mat,
+                                    all_lines_raw, all_obj_cubes);
+
 }
